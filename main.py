@@ -15,7 +15,7 @@ from vkbottle import Keyboard, KeyboardButtonColor, Text
 from vkbottle import BaseStateGroup
 
 # ================= НАСТРОЙКИ =================
-GROUP_TOKEN = "vk1.a.ТВОЙ_ТОКЕН_СЮДА_ПОЛНОСТЬЮ"
+GROUP_TOKEN = "vk1.a.AOyP3eRdxp8yz4R6iUbbTN6xkTkwVkxfBSzNYeycoGh9VGJLMTrg6mj1ndPWoF9Gbd7XEAcl7VIFTLvM9qa33LqPyy5R-5qjRNsca0Q-9naOTm9W_n437r7RM3LKrWtYvo1CVj9CS0_D6bGqstOvsUsbF_jxxSAXBF4IzXUP3MKjW_iiwJJEr6FqgHEo_pnrY_aEjclWJzPbQS_JhZKVJw"
 GROUP_ID    = 38935595
 
 bot = Bot(token=GROUP_TOKEN)
