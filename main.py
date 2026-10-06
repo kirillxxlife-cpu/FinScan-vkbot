@@ -15,8 +15,8 @@ from vkbottle import Keyboard, KeyboardButtonColor, Text
 from vkbottle import BaseStateGroup
 
 # ================= НАСТРОЙКИ =================
-GROUP_TOKEN = os.getenv("VK_GROUP_TOKEN", "ТВОЙ_ТОКЕН_СООБЩЕСТВА")
-GROUP_ID    = int(os.getenv("VK_GROUP_ID", "123456789"))
+GROUP_TOKEN = "vk1.a.ТВОЙ_ТОКЕН_СЮДА_ПОЛНОСТЬЮ"
+GROUP_ID    = 38935595
 
 bot = Bot(token=GROUP_TOKEN)
 bot.labeler.vbml_ignore_case = True
