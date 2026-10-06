@@ -1,34 +1,33 @@
 # ============================================================
-#  VK BOT — ФИНСКАН v3.0
-#  Фреймворк: vkbottle
-#  Режим: Long Poll API
-#  Гибкая система подбора офферов по ЦА
+#  VK BOT — ФИНСКАН v4.0
+#  Фреймворк: vkbottle | Режим: Long Poll API
+#  Гибкая система подбора офферов + единый роутер
 # ============================================================
 
 import os
 import re
+import json
 import asyncio
 from datetime import datetime
 
 from vkbottle.bot import Bot, Message
 from vkbottle import Keyboard, KeyboardButtonColor, Text
-from vkbottle import BaseStateGroup
 
 # ================= НАСТРОЙКИ =================
-GROUP_TOKEN = "vk1.a.AOyP3eRdxp8yz4R6iUbbTN6xkTkwVkxfBSzNYeycoGh9VGJLMTrg6mj1ndPWoF9Gbd7XEAcl7VIFTLvM9qa33LqPyy5R-5qjRNsca0Q-9naOTm9W_n437r7RM3LKrWtYvo1CVj9CS0_D6bGqstOvsUsbF_jxxSAXBF4IzXUP3MKjW_iiwJJEr6FqgHEo_pnrY_aEjclWJzPbQS_JhZKVJw"
+GROUP_TOKEN = "vk1.a.AOyP3eRdxp8yz4R6iUbbTN6xkTkwVkxfBSzNYeycoGh9VGJLMTrg6mj1ndPWoF9Gbd7XEAcl7VIFTLvM9qa33LqPyy5R-5qjRNsca0Q-9naOTm9W_n437r7RM3LKrWtYvo1CVj9CS0_D6bGqstOvsUsbF_jxxSAXBF4IzXUP3MKjW_iiwJJEr6FqgHEo_pnrY_aEjclWJzPbQS_JhZKVJw"    # ← ЗАМЕНИ на свой реальный токен!
 GROUP_ID    = 38935595
 
 bot = Bot(token=GROUP_TOKEN)
 bot.labeler.vbml_ignore_case = True
 
 # ============================================================
-#  БАЗА ОФФЕРОВ — расширенная, с тегами для подбора
+#  БАЗА ОФФЕРОВ — с тегами для скоринга
 # ============================================================
 OFFERS = {
     "zaymigo": {
         "name": "Займер",
         "url": "https://vk.cc/d1TuQm",
-        "reason_0": "Первый займ под 0% для новых клиентов — возвращаешь ровно столько, сколько взял.",
+        "reason_0": "Первый займ под 0% — возвращаешь ровно столько, сколько взял.",
         "reason_bad": "Дают даже с испорченной КИ — главное, чтобы не было открытых просрочек.",
         "tags": ["student", "working", "freelance", "good_credit", "first_time"],
         "weight": 0.9
@@ -132,71 +131,46 @@ OFFERS = {
 }
 
 # ============================================================
-#  ГИБКАЯ СИСТЕМА ПОДБОРА — скоринг по ЦА
+#  ГИБКИЙ ПОДБОР ОФФЕРОВ ПО ЦА
 # ============================================================
 def get_offers_for_user(state: dict) -> list:
-    """
-    Возвращает топ-2 оффера, отранжированных по скорингу.
-    Учитывает статус, КИ, сумму и дополнительные факторы.
-    """
     status = state.get("status") or ""
     credit = state.get("credit") or ""
     amount = state.get("amount") or ""
 
-    # Формируем теги пользователя
     user_tags = []
 
-    # Статус
-    if status == "Студент":
-        user_tags.append("student")
-    elif status == "Работаю":
-        user_tags.append("working")
-    elif status == "Фриланс":
-        user_tags.append("freelance")
-    elif status == "Без работы":
-        user_tags.append("no_job")
+    if status == "Студент":     user_tags.append("student")
+    elif status == "Работаю":   user_tags.append("working")
+    elif status == "Фриланс":   user_tags.append("freelance")
+    elif status == "Без работы": user_tags.append("no_job")
 
-    # КИ
-    if credit == "Идеальная":
-        user_tags.append("good_credit")
-    elif credit == "Были просрочки":
-        user_tags.append("bad_credit")
-    elif credit == "Никогда не брал":
-        user_tags.append("first_time")
+    if credit == "Идеальная":         user_tags.append("good_credit")
+    elif credit == "Были просрочки":  user_tags.append("bad_credit")
+    elif credit == "Никогда не брал": user_tags.append("first_time")
 
-    # Сумма
-    if amount == "50.000 – 100.000 ₽":
-        user_tags.append("high_amount")
-    elif amount == "до 15.000 ₽":
-        user_tags.append("low_amount")
+    if amount == "50.000 – 100.000 ₽": user_tags.append("high_amount")
+    elif amount == "до 15.000 ₽":       user_tags.append("low_amount")
 
-    # Скоринг
     scored = []
     for key, offer in OFFERS.items():
         score = 0.0
         for tag in offer["tags"]:
             if tag in user_tags:
                 score += 1.0
-        # Вес оффера — базовый приоритет
         score += offer["weight"]
-        # Бонус за точное совпадение по КИ
         if credit == "Были просрочки" and "bad_credit" in offer["tags"]:
             score += 0.5
         if credit == "Никогда не брал" and "first_time" in offer["tags"]:
             score += 0.3
-        # Бонус за совпадение по сумме
         if amount == "50.000 – 100.000 ₽" and "high_amount" in offer["tags"]:
             score += 0.4
-
         scored.append((score, key, offer))
 
-    # Сортируем по убыванию
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # Возвращаем топ-2
     result = []
     for score, key, offer in scored[:2]:
-        # Выбираем reason в зависимости от КИ
         reason_key = "reason_bad" if credit == "Были просрочки" else "reason_0"
         result.append({
             "key": key,
@@ -205,29 +179,23 @@ def get_offers_for_user(state: dict) -> list:
             "reason": offer.get(reason_key, offer.get("reason_0", "")),
             "score": round(score, 2)
         })
-
     return result
 
 # ============================================================
-#  СОСТОЯНИЯ
-# ============================================================
-class Form(BaseStateGroup):
-    STATUS   = "status"
-    CREDIT   = "credit"
-    AMOUNT   = "amount"
-    CONFIRM  = "confirm"
-    PHONE    = "phone"
-
-# ============================================================
-#  ХРАНИЛИЩЕ (для продакшена — SQLite, для старта — память)
+#  ХРАНИЛИЩЕ СОСТОЯНИЙ (в памяти, для прода — SQLite)
 # ============================================================
 user_data = {}
 
 def get_data(peer_id: int) -> dict:
     if peer_id not in user_data:
         user_data[peer_id] = {
-            "status": None, "credit": None, "amount": None,
-            "phone": None, "name": None, "startedAt": None
+            "step": None,
+            "status": None,
+            "credit": None,
+            "amount": None,
+            "phone": None,
+            "name": None,
+            "startedAt": None
         }
     return user_data[peer_id]
 
@@ -288,19 +256,36 @@ def kb_main():
     return kb.get_json()
 
 # ============================================================
-#  ХЕНДЛЕРЫ
+#  ХЕЛПЕРЫ
 # ============================================================
+async def safe_get_name(message: Message) -> str:
+    try:
+        user = (await bot.api.users.get(user_ids=message.from_id))[0]
+        return user.first_name or "друг"
+    except Exception:
+        return "друг"
 
-@bot.on.message(text="/start")
-async def start_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    data["name"] = (await bot.api.users.get(user_ids=message.from_id))[0].first_name
+def parse_payload(message: Message) -> str:
+    payload = getattr(message, "payload", None)
+    if isinstance(payload, dict):
+        return payload.get("cmd") or ""
+    if isinstance(payload, str):
+        try:
+            return (json.loads(payload) or {}).get("cmd") or ""
+        except Exception:
+            return ""
+    return ""
+
+async def send_welcome(message: Message, data: dict):
+    name = data.get("name") or "друг"
+    data["step"] = "status"
+    data["status"] = None
+    data["credit"] = None
+    data["amount"] = None
+    data["phone"] = None
     data["startedAt"] = datetime.now().isoformat()
-
-    await bot.state_dispenser.set(peer_id, Form.STATUS)
     await message.answer(
-        f"{data['name']}, привет.\n\n"
+        f"{name}, привет.\n\n"
         "Если ты здесь — скорее всего, деньги нужны срочно: не хватает до зарплаты, "
         "банк отказал, или просто не хочется просить у знакомых.\n\n"
         "Я подбираю займы в МФО с лицензией ЦБ РФ. Одобрение — от 5 минут, деньги на карту. "
@@ -309,226 +294,205 @@ async def start_handler(message: Message):
         keyboard=kb_start()
     )
 
-# ---------- GO ----------
-@bot.on.message(payload={"cmd": "go"})
-async def go_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    await bot.state_dispenser.set(peer_id, Form.STATUS)
+async def send_phone_step(message: Message, data: dict):
+    name = data.get("name") or "друг"
+    data["step"] = "phone"
     await message.answer(
-        f"{data['name']}, первый вопрос — самый важный.\n\n"
-        "Кто ты сейчас по статусу?\n\n"
-        "Это не для проверки — это чтобы понять, куда тебе скорее всего одобрят. "
-        "Студентам, фрилансерам и людям без официального дохода тоже дают, просто в других МФО.",
-        keyboard=kb_status()
-    )
-
-# ---------- STATUS ----------
-@bot.on.message(payload={"cmd": "status_student"})
-@bot.on.message(payload={"cmd": "status_working"})
-@bot.on.message(payload={"cmd": "status_freelance"})
-@bot.on.message(payload={"cmd": "status_nojob"})
-async def status_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    cmd = message.payload.get("cmd")
-
-    map_status = {
-        "status_student": "Студент",
-        "status_working": "Работаю",
-        "status_freelance": "Фриланс",
-        "status_nojob": "Без работы"
-    }
-    data["status"] = map_status.get(cmd)
-
-    # Триггеры: снятие стыда + соцдоказательство + калиброванная лесть
-    praise = {
-        "Студент": "Студенты сейчас самые подкованные — многие МФО дают специальные условия.",
-        "Работаю": "С постоянным доходом тебе открыты почти все — это твой козырь.",
-        "Фриланс": "Фриланс — жёстко, но ты сам себе работодатель. Многие МФО это признают.",
-        "Без работы": "Ничего страшного, это временно. Есть МФО, где одобряют и без 2-НДФЛ."
-    }.get(data["status"], "")
-
-    await bot.state_dispenser.set(peer_id, Form.CREDIT)
-    await message.answer(
-        f"{data['name']}, зафиксировал: {data['status']}. {praise}\n\n"
-        "Теперь про кредитную историю.\n\n"
-        "Если были просрочки — это не приговор. Есть МФО, которые специально работают с такими клиентами. "
-        "Просто у них чуть выше ставка, но одобрение приходит в тот же день.\n\n"
-        "Как у тебя с КИ?",
-        keyboard=kb_credit()
-    )
-
-# ---------- CREDIT ----------
-@bot.on.message(payload={"cmd": "credit_good"})
-@bot.on.message(payload={"cmd": "credit_bad"})
-@bot.on.message(payload={"cmd": "credit_none"})
-async def credit_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    cmd = message.payload.get("cmd")
-
-    map_credit = {
-        "credit_good": "Идеальная",
-        "credit_bad": "Были просрочки",
-        "credit_none": "Никогда не брал"
-    }
-    data["credit"] = map_credit.get(cmd)
-
-    # Мимикрия / отражение
-    reflect = {
-        "Идеальная": "Идеальная КИ — это твой главный козырь, тебе дадут лучшие условия.",
-        "Были просрочки": "С просрочками работают МФО с лояльным скорингом. Не переживай.",
-        "Никогда не брал": "Чистая история — это тоже плюс, тебя увидят как нового клиента и дадут 0%."
-    }.get(data["credit"], "")
-
-    await bot.state_dispenser.set(peer_id, Form.AMOUNT)
-    await message.answer(
-        f"{reflect}\n\n"
-        "Сколько нужно? Выбери диапазон — я подберу МФО, где лимиты начинаются именно с таких сумм.\n\n"
-        "Совет: бери ровно столько, сколько нужно, и на срок, который точно закроешь. "
-        "Тогда переплата будет минимальной.",
-        keyboard=kb_amount()
-    )
-
-# ---------- AMOUNT ----------
-@bot.on.message(payload={"cmd": "amount_low"})
-@bot.on.message(payload={"cmd": "amount_mid"})
-@bot.on.message(payload={"cmd": "amount_high"})
-async def amount_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    cmd = message.payload.get("cmd")
-
-    map_amount = {
-        "amount_low": "до 15.000 ₽",
-        "amount_mid": "15.000 – 50.000 ₽",
-        "amount_high": "50.000 – 100.000 ₽"
-    }
-    data["amount"] = map_amount.get(cmd)
-
-    summary = (
-        f"Итак, {data['name']}:\n"
-        f"• Статус: {data['status']}\n"
-        f"• КИ: {data['credit']}\n"
-        f"• Сумма: {data['amount']}\n\n"
-        "Всё верно?"
-    )
-
-    await bot.state_dispenser.set(peer_id, Form.CONFIRM)
-    await message.answer(summary, keyboard=kb_confirm())
-
-# ---------- CONFIRM ----------
-@bot.on.message(payload={"cmd": "confirm_yes"})
-async def confirm_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-
-    await bot.state_dispenser.set(peer_id, Form.PHONE)
-    await message.answer(
-        f"{data['name']}, отлично.\n\n"
+        f"{name}, отлично.\n\n"
         "Оставь номер телефона — пришлю подборку под тебя лично.\n\n"
         "🔒 По этому номеру мы не звоним без твоего согласия. Только чтобы отправить ссылку.",
         keyboard=kb_phone()
     )
 
-@bot.on.message(payload={"cmd": "confirm_edit"})
-async def confirm_edit_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    data["status"] = None
-    data["credit"] = None
-    data["amount"] = None
-    await bot.state_dispenser.set(peer_id, Form.STATUS)
-    await message.answer("Ок, начнём заново.", keyboard=kb_status())
+async def send_final_offer(message: Message, data: dict):
+    name = data.get("name") or "друг"
+    offers = get_offers_for_user(data)
+    if not offers:
+        await message.answer("Не удалось подобрать оффер. Попробуй /start заново.")
+        return
+    primary = offers[0]
+    backup = offers[1] if len(offers) > 1 else None
 
-# ---------- PHONE ----------
-@bot.on.message(payload={"cmd": "phone_start"})
-async def phone_ask_handler(message: Message):
-    await message.answer("Напиши номер в формате +7 900 123-45-67.")
-
-@bot.on.message(state=Form.PHONE)
-async def phone_input_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    text = message.text.strip() if message.text else ""
-
-    digits = re.sub(r"\D", "", text)
-
-    if len(digits) >= 10:
-        data["phone"] = text
-
-        # --- ГИБКИЙ ПОДБОР ОФФЕРОВ ---
-        offers = get_offers_for_user(data)
-
-        if not offers:
-            await message.answer("Не удалось подобрать оффер. Попробуй ещё раз /start")
-            return
-
-        primary = offers[0]
-        backup  = offers[1] if len(offers) > 1 else None
-
-        msg = (
-            f"{data['name']}, готово! Вот твой вариант:\n\n"
-            f"🏆 {primary['name']}\n"
-            f"💡 {primary['reason']}\n"
-            f"👉 {primary['url']}\n\n"
-        )
-
-        if backup:
-            msg += (
-                f"🔄 Запасной вариант (если этот не подойдёт):\n"
-                f"👉 {backup['url']}\n\n"
-            )
-
-        msg += (
-            "Что делать прямо сейчас:\n"
-            "1️⃣ Открой ссылку\n"
-            "2️⃣ Заполни анкету (2–3 минуты)\n"
-            "3️⃣ Дождись одобрения — обычно 5–15 минут\n"
-            "4️⃣ Деньги упадут на карту в тот же день\n\n"
-            "⚡ Ставки 0% для новых клиентов — ограниченное время.\n\n"
-            "⚠️ Реклама. ПСК от 0% до 292% годовых. Оценивайте риски."
-        )
-
-        await bot.state_dispenser.delete(peer_id)
-        await message.answer(msg, keyboard=kb_main())
-
-    else:
-        await message.answer(
-            f"{data['name']}, формат немного другой. Скинь так: +7 900 123-45-67"
-        )
-
-# ---------- ZERO LOANS ----------
-@bot.on.message(payload={"cmd": "zero_loans"})
-async def zero_loans_handler(message: Message):
-    peer_id = message.peer_id
-    data = get_data(peer_id)
-    name = data.get("name", "друг")
-
-    await message.answer(
-        f"{name}, вот займы под 0% для новых клиентов.\n\n"
-        "Это предложения, где первый займ можно взять без процентов — "
-        "возвращаешь ровно ту сумму, которую взял.\n\n"
-        "Как не переплатить:\n"
-        "1️⃣ Бери только ту сумму, которую точно вернёшь.\n"
-        "2️⃣ Верни в срок — обычно 7–30 дней.\n"
-        "3️⃣ Проверь ПСК в договоре.\n"
-        "4️⃣ Не подключай платные доп. услуги.\n\n"
-        "👇 Выбирай МФО:",
-        keyboard=kb_main()
+    msg = (
+        f"{name}, готово! Вот твой вариант:\n\n"
+        f"🏆 {primary['name']}\n"
+        f"💡 {primary['reason']}\n"
+        f"👉 {primary['url']}\n\n"
     )
+    if backup:
+        msg += f"🔄 Запасной вариант:\n👉 {backup['url']}\n\n"
+    msg += (
+        "Что делать прямо сейчас:\n"
+        "1️⃣ Открой ссылку\n"
+        "2️⃣ Заполни анкету (2–3 минуты)\n"
+        "3️⃣ Дождись одобрения — обычно 5–15 минут\n"
+        "4️⃣ Деньги упадут на карту в тот же день\n\n"
+        "⚠️ Реклама. ПСК от 0% до 292% годовых. Оценивайте риски."
+    )
+    data["step"] = "done"
+    await message.answer(msg, keyboard=kb_main())
 
-# ---------- RESTART ----------
-@bot.on.message(payload={"cmd": "restart"})
-async def restart_handler(message: Message):
+# ============================================================
+#  ЕДИНЫЙ РОУТЕР — ловит ВСЁ
+# ============================================================
+@bot.on.message()
+async def main_router(message: Message):
     peer_id = message.peer_id
     data = get_data(peer_id)
-    data["status"] = None
-    data["credit"] = None
-    data["amount"] = None
-    await bot.state_dispenser.set(peer_id, Form.STATUS)
-    await message.answer("Начинаем заново!", keyboard=kb_status())
+
+    # Имя пользователя — один раз
+    if not data.get("name"):
+        data["name"] = await safe_get_name(message)
+
+    text_raw = (message.text or "").strip()
+    cmd = parse_payload(message)
+    name = data["name"]
+
+    # ---------- /start ИЛИ ЛЮБОЕ ПЕРВОЕ СООБЩЕНИЕ ----------
+    if text_raw.lower().startswith("/start") or not data.get("step"):
+        await send_welcome(message, data)
+        return
+
+    # ---------- PAYLOAD-КОМАНДЫ ----------
+    if cmd == "go":
+        data["step"] = "status"
+        await message.answer(
+            f"{name}, первый вопрос — самый важный.\n\n"
+            "Кто ты сейчас по статусу?\n\n"
+            "Это не для проверки — это чтобы понять, куда тебе скорее всего одобрят. "
+            "Студентам, фрилансерам и людям без официального дохода тоже дают, просто в других МФО.",
+            keyboard=kb_status()
+        )
+        return
+
+    if cmd in ("status_student", "status_working", "status_freelance", "status_nojob"):
+        map_status = {
+            "status_student": "Студент",
+            "status_working": "Работаю",
+            "status_freelance": "Фриланс",
+            "status_nojob": "Без работы"
+        }
+        data["status"] = map_status[cmd]
+        data["step"] = "credit"
+        praise = {
+            "Студент": "Студенты сейчас самые подкованные — многие МФО дают специальные условия.",
+            "Работаю": "С постоянным доходом тебе открыты почти все — это твой козырь.",
+            "Фриланс": "Фриланс — жёстко, но ты сам себе работодатель. Многие МФО это признают.",
+            "Без работы": "Ничего страшного, это временно. Есть МФО, где одобряют и без 2-НДФЛ."
+        }.get(data["status"], "")
+        await message.answer(
+            f"{name}, зафиксировал: {data['status']}. {praise}\n\n"
+            "Теперь про кредитную историю.\n\n"
+            "Если были просрочки — это не приговор. Есть МФО, которые специально работают с такими клиентами. "
+            "Просто у них чуть выше ставка, но одобрение приходит в тот же день.\n\n"
+            "Как у тебя с КИ?",
+            keyboard=kb_credit()
+        )
+        return
+
+    if cmd in ("credit_good", "credit_bad", "credit_none"):
+        map_credit = {
+            "credit_good": "Идеальная",
+            "credit_bad": "Были просрочки",
+            "credit_none": "Никогда не брал"
+        }
+        data["credit"] = map_credit[cmd]
+        data["step"] = "amount"
+        reflect = {
+            "Идеальная": "Идеальная КИ — это твой главный козырь, тебе дадут лучшие условия.",
+            "Были просрочки": "С просрочками работают МФО с лояльным скорингом. Не переживай.",
+            "Никогда не брал": "Чистая история — это тоже плюс, тебя увидят как нового клиента и дадут 0%."
+        }.get(data["credit"], "")
+        await message.answer(
+            f"{reflect}\n\n"
+            "Сколько нужно? Выбери диапазон — я подберу МФО, где лимиты начинаются именно с таких сумм.\n\n"
+            "Совет: бери ровно столько, сколько нужно, и на срок, который точно закроешь. "
+            "Тогда переплата будет минимальной.",
+            keyboard=kb_amount()
+        )
+        return
+
+    if cmd in ("amount_low", "amount_mid", "amount_high"):
+        map_amount = {
+            "amount_low": "до 15.000 ₽",
+            "amount_mid": "15.000 – 50.000 ₽",
+            "amount_high": "50.000 – 100.000 ₽"
+        }
+        data["amount"] = map_amount[cmd]
+        data["step"] = "confirm"
+        summary = (
+            f"Итак, {name}:\n"
+            f"• Статус: {data['status']}\n"
+            f"• КИ: {data['credit']}\n"
+            f"• Сумма: {data['amount']}\n\n"
+            "Всё верно?"
+        )
+        await message.answer(summary, keyboard=kb_confirm())
+        return
+
+    if cmd == "confirm_yes":
+        await send_phone_step(message, data)
+        return
+
+    if cmd == "confirm_edit":
+        data["status"] = None
+        data["credit"] = None
+        data["amount"] = None
+        data["step"] = "status"
+        await message.answer("Ок, начнём заново.", keyboard=kb_status())
+        return
+
+    if cmd == "phone_start":
+        await message.answer("Напиши номер в формате +7 900 123-45-67.")
+        return
+
+    if cmd == "zero_loans":
+        await message.answer(
+            f"{name}, вот займы под 0% для новых клиентов.\n\n"
+            "Это предложения, где первый займ можно взять без процентов — "
+            "возвращаешь ровно ту сумму, которую взял.\n\n"
+            "Как не переплатить:\n"
+            "1️⃣ Бери только ту сумму, которую точно вернёшь.\n"
+            "2️⃣ Верни в срок — обычно 7–30 дней.\n"
+            "3️⃣ Проверь ПСК в договоре.\n"
+            "4️⃣ Не подключай платные доп. услуги.",
+            keyboard=kb_main()
+        )
+        return
+
+    if cmd == "restart":
+        await send_welcome(message, data)
+        return
+
+    # ---------- ВВОД ТЕЛЕФОНА ----------
+    if data.get("step") == "phone":
+        digits = re.sub(r"\D", "", text_raw)
+        if len(digits) >= 10:
+            data["phone"] = text_raw
+            await send_final_offer(message, data)
+        else:
+            await message.answer(
+                f"{name}, формат немного другой. Скинь так: +7 900 123-45-67"
+            )
+        return
+
+    # ---------- ПРОЧИЕ ШАГИ: если юзер написал текст вместо тапа ----------
+    step = data.get("step")
+    if step == "status":
+        await message.answer(f"{name}, выбери, пожалуйста, кнопкой ниже 👇", keyboard=kb_status())
+        return
+    if step == "credit":
+        await message.answer(f"{name}, выбери, пожалуйста, кнопкой ниже 👇", keyboard=kb_credit())
+        return
+    if step == "amount":
+        await message.answer(f"{name}, выбери, пожалуйста, кнопкой ниже 👇", keyboard=kb_amount())
+        return
+    if step == "confirm":
+        await message.answer(f"{name}, подтверди, пожалуйста, кнопкой ниже 👇", keyboard=kb_confirm())
+        return
+
+    # ---------- FALLBACK ----------
+    await send_welcome(message, data)
 
 # ============================================================
 #  ЗАПУСК
