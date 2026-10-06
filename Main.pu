@@ -12,7 +12,7 @@ from datetime import datetime
 
 from vkbottle.bot import Bot, Message
 from vkbottle import Keyboard, KeyboardButtonColor, Text
-from vkbottle_types import BaseStateGroup
+from vkbottle import BaseStateGroup
 
 # ================= НАСТРОЙКИ =================
 GROUP_TOKEN = os.getenv("VK_GROUP_TOKEN", "ТВОЙ_ТОКЕН_СООБЩЕСТВА")
